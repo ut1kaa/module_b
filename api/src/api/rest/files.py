@@ -1,0 +1,200 @@
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from fastapi_jwt_auth import AuthJWT
+from src.models import File as FileModel, FileAccess, User
+from src.database import get_session
+from pydantic import BaseModel
+import os
+import shutil
+
+router = APIRouter()
+
+UPLOAD_DIR = "uploads"
+
+class FileUploadResponse(BaseModel):
+    success: bool
+    message: str
+    file_name: str
+    file_url: str
+    file_id: str
+
+@router.post("/upload", response_model=FileUploadResponse)
+async def upload_files(files: UploadFile = File(...), db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    allowed_extensions = {'doc', 'pdf', 'docx', 'zip', 'jpeg', 'jpg', 'png'}
+    file_extension = files.filename.split('.')[-1].lower()
+
+    if file_extension not in allowed_extensions:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed")
+
+    if files.size > 2 * 1024 * 1024:  # 2 MB
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File size exceeds 2 MB")
+
+    file_id = os.urandom(8).hex()
+    file_name = f"{file_id}.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(files.file, buffer)
+
+    new_file = FileModel(name=files.filename, file_path=file_path, file_id=file_id, user_id=user_id)
+    db.add(new_file)
+    db.commit()
+
+    file_access = FileAccess(file_id=file_id, user_id=user_id, type='author')
+    db.add(file_access)
+    db.commit()
+
+    return {"success": True, "message": "File uploaded", "file_name": files.filename, "file_url": file_path, "file_id": file_id}
+
+@router.post("/rename/{file_id}")
+async def rename_file(file_id: str, new_name: str, db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    file = db.query(FileModel).filter(FileModel.file_id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found or forbidden")
+
+    file.name = new_name
+    db.commit()
+
+    return {"success": True, "message": "File renamed"}
+
+@router.delete("/delete/{file_id}")
+async def delete_file(file_id: str, db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    file = db.query(FileModel).filter(FileModel.file_id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    try:
+        os.remove(file.file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on server")
+
+    db.delete(file)
+    db.commit()
+
+    return {"success": True, "message": "File deleted"}
+
+@router.get("/download/{file_id}")
+async def download_file(file_id: str, db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+
+    file = db.query(FileModel).filter(FileModel.file_id == file_id).first()
+
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    return FileResponse(file.file_path, media_type="application/octet-stream", filename=file.name)
+
+@router.post("/access/{file_id}")
+async def add_file_access(file_id: str, email: str, db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    file = db.query(FileModel).filter(FileModel.file_id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found or forbidden")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    file_access = db.query(FileAccess).filter(FileAccess.file_id == file.file_id, FileAccess.user_id == user.id).first()
+    if not file_access:
+        new_access = FileAccess(file_id=file.file_id, user_id=user.id, type="co-author")
+        db.add(new_access)
+        db.commit()
+
+    accesses = db.query(FileAccess).filter(FileAccess.file_id == file.file_id).all()
+    response = [{"fullname": f"{acc.user.first_name} {acc.user.last_name}", "email": acc.user.email, "type": acc.type} for acc in accesses]
+
+    return response
+
+@router.delete("/access/{file_id}")
+async def delete_file_access(file_id: str, email: str, db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    file = db.query(FileModel).filter(FileModel.file_id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found or forbidden")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if email == Authorize.get_jwt_subject():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot remove your own access")
+
+    access = db.query(FileAccess).filter(FileAccess.file_id == file.file_id, FileAccess.user_id == user.id).first()
+
+    if not access:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in file access list")
+
+    db.delete(access)
+    db.commit()
+
+    return {"success": True, "message": "Access removed"}
+
+@router.get("/files")
+async def get_files(db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    files_by_user = db.query(FileModel).filter(FileModel.user_id == user_id).all()
+    response = []
+
+    for file in files_by_user:
+        accesses_by_file = db.query(FileAccess).filter(FileAccess.file_id == file.file_id).all()
+        
+        for access in accesses_by_file:
+            user = db.query(User).filter(User.id == access.user_id).first()
+
+            if user:
+                response.append({
+                    'file_id': file.file_id,
+                    'name': file.name,
+                    'url': file.file_path,
+                    'accesses': {
+                        'fullname': f"{user.first_name} {user.last_name}",
+                        'email': user.email,
+                        'type': access.type
+                    }
+                })
+
+    return response
+
+@router.get("/shared-files")
+async def get_shared_files(db: Session = Depends(get_session), Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+    user_id = Authorize.get_jwt_subject()
+
+    file_accesses_by_user = db.query(FileAccess).filter(
+        FileAccess.user_id == user_id, 
+        FileAccess.type == "co-author"
+    ).all()
+
+    shared_files = []
+    for access in file_accesses_by_user:
+        file = db.query(FileModel).filter(FileModel.file_id == access.file_id).first()
+        if file:
+            shared_files.append({
+                'file_id': file.file_id,
+                'name': file.name,
+                'url': file.file_path
+            })
+
+    return shared_files
+
+
+def explode_url(url: str) -> str:
+    parts = url.split('/')
+    return parts[-1]
