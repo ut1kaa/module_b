@@ -1,3 +1,3 @@
-from .user import User
-from .file import File
-from .fileAccess import FileAccess
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()

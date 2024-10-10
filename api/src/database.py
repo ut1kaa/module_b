@@ -1,11 +1,8 @@
-from typing import Annotated, AsyncIterator
-
-from fastapi import Depends
+from typing import AsyncIterator
+from fastapi import Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
-
 from src.settings import settings
-
 
 async_engine = create_async_engine(
     settings.DB_URL,
@@ -18,17 +15,6 @@ AsyncSessionLocal = async_sessionmaker(
     future=True,
 )
 
-# async def get_session() -> AsyncIterator[async_sessionmaker]:
-#     try:
-#         yield AsyncSessionLocal
-#     except SQLAlchemyError as e:
-#         from src.run import LOGGER
-#         LOGGER.exception(e)
-
-
-# AsyncSession = Annotated[async_sessionmaker, Depends(get_session)]
-
-
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         try:
@@ -36,7 +22,4 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except SQLAlchemyError as e:
             from src.run import LOGGER
             LOGGER.exception(e)
-            # raise HTTPException(status_code=500, detail="Database error")
-
-# Dependency для получения сессии
-AsyncSessionDep = Annotated[AsyncSession, Depends(get_session)]
+            raise HTTPException(status_code=500, detail="Database error")

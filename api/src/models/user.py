@@ -1,8 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, func
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.orm import relationship
+from . import Base
 from werkzeug.security import generate_password_hash, check_password_hash
-
-Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
@@ -14,9 +13,12 @@ class User(Base):
     last_name = Column(String(50))
     email_verified_at = Column(DateTime)
 
+    files = relationship("File", back_populates="user")
+    file_accesses = relationship("FileAccess", back_populates="user")
+
     def __init__(self, email, password, first_name=None, last_name=None):
         self.email = email
-        self.password_hash = generate_password_hash(password)
+        self.password_hash = generate_password_hash(password) 
         self.first_name = first_name
         self.last_name = last_name
 
