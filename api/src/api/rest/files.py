@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_jwt_auth import AuthJWT
+from src.middlewares.auth import authenticate
 from src.models.file import File as FileModel
 from src.models.fileAccess import FileAccess
 from src.models.user import User
@@ -20,9 +21,9 @@ class FileUploadResponse(BaseModel):
     message: str
     file_name: str
     file_url: str
-    file_id: str
+    file_id: int
 
-@router.post("/upload", response_model=FileUploadResponse)
+@router.post("/files", response_model=FileUploadResponse)
 async def upload_files(files: UploadFile = File(...), db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -36,7 +37,7 @@ async def upload_files(files: UploadFile = File(...), db: AsyncSession = Depends
     if files.size > 2 * 1024 * 1024:  # 2 MB
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File size exceeds 2 MB")
 
-    file_id = os.urandom(8).hex()
+    file_id = int.from_bytes(os.urandom(4), 'big') & 0xFFFFFFFF
     file_name = f"{file_id}.{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
 
@@ -50,13 +51,14 @@ async def upload_files(files: UploadFile = File(...), db: AsyncSession = Depends
     await db.commit()
     await db.refresh(new_file)
 
-    file_access = FileAccess(file_id=new_file.file_id, user_id=user_id, type='author')
+    # Proceed to add file access
+    file_access = FileAccess(file_id=new_file.id, user_id=user_id, type='author')
     db.add(file_access)
     await db.commit()
 
     return {"success": True, "message": "File uploaded", "file_name": files.filename, "file_url": file_path, "file_id": file_id}
 
-@router.post("/rename/{file_id}")
+@router.patch("/files/{file_id}", dependencies=[Depends(authenticate)])
 async def rename_file(file_id: str, new_name: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -72,7 +74,7 @@ async def rename_file(file_id: str, new_name: str, db: AsyncSession = Depends(ge
 
     return {"success": True, "message": "File renamed"}
 
-@router.delete("/delete/{file_id}")
+@router.delete("/files/{file_id}", dependencies=[Depends(authenticate)])
 async def delete_file(file_id: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -93,7 +95,7 @@ async def delete_file(file_id: str, db: AsyncSession = Depends(get_session), Aut
 
     return {"success": True, "message": "File deleted"}
 
-@router.get("/download/{file_id}")
+@router.get("/files/{file_id}", dependencies=[Depends(authenticate)])
 async def download_file(file_id: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
 
@@ -105,7 +107,7 @@ async def download_file(file_id: str, db: AsyncSession = Depends(get_session), A
 
     return FileResponse(file.file_path, media_type="application/octet-stream", filename=file.name)
 
-@router.post("/access/{file_id}")
+@router.post("/files/{file_id}/accesses", dependencies=[Depends(authenticate)])
 async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -137,7 +139,7 @@ async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(g
 
     return response
 
-@router.delete("/access/{file_id}")
+@router.delete("/files/{file_id}/accesses", dependencies=[Depends(authenticate)])
 async def delete_file_access(file_id: str, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -200,7 +202,7 @@ async def get_files(db: AsyncSession = Depends(get_session), Authorize: AuthJWT 
 
     return response
 
-@router.get("/shared-files")
+@router.get("/shared", dependencies=[Depends(authenticate)])
 async def get_shared_files(db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()

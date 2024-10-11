@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
 from fastapi_jwt_auth import AuthJWT
 from pydantic import BaseModel, EmailStr, validator
+from src.middlewares.auth import authenticate
 from src.models.user import User
 from src.database import get_session
 from sqlalchemy.future import select
@@ -28,7 +30,7 @@ class LoginModel(BaseModel):
     def trim_string(cls, value: str) -> str:
         return value.strip()
 
-@router.post("/register")
+@router.post("/registration")
 async def register(user: RegisterModel, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     result = await db.execute(select(User).filter(User.email == user.email))
     existing_user = result.scalars().first()
@@ -43,9 +45,11 @@ async def register(user: RegisterModel, db: AsyncSession = Depends(get_session),
     await db.refresh(new_user)
 
     access_token = Authorize.create_access_token(subject=new_user.id)
+
     return {"token": access_token, "message": "User registered successfully"}
 
-@router.post("/login")
+
+@router.post("/authorization")
 async def login(user: LoginModel, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     result = await db.execute(select(User).filter(User.email == user.email))
     db_user = result.scalars().first()
@@ -57,7 +61,15 @@ async def login(user: LoginModel, db: AsyncSession = Depends(get_session), Autho
     return {"token": access_token, "message": "Login successful"}
 
 
-@router.post("/logout")
+@router.get("/logout", dependencies=[Depends(authenticate)])
 async def logout(Authorize: AuthJWT = Depends()):
     Authorize.unset_jwt_cookies()
     return {"message": "Logout successful"}
+
+
+@router.get("/login")
+async def login():
+    return JSONResponse(
+        status_code=403,
+        content={"message": "Login failed"}
+    )
