@@ -16,6 +16,7 @@ settings = Settings()
 
 class SettingsJWT(BaseModel):
     authjwt_secret_key: str = settings.AUTHJWT_SECRET_KEY
-    authjwt_token_location: set = {"cookies"}
+    # authjwt_token_location: set = {"cookies"}
     authjwt_cookie_csrf_protect: bool = False
+    # authjwt_cookie_samesite: str = "none"
 

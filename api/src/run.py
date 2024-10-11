@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_jwt_auth import AuthJWT
 from .settings import SettingsJWT
-from .middlewares import AuthenticateMiddleware, RedirectIfAuthenticatedMiddleware
+# from .middlewares import AuthenticateMiddleware, RedirectIfAuthenticatedMiddleware
 from .api.rest import AuthRouter, FilesRouter
 
 LOGGER = logging.getLogger(__name__)
