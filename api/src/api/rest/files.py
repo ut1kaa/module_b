@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_jwt_auth import AuthJWT
 from src.middlewares.auth import authenticate
@@ -23,7 +24,7 @@ class FileUploadResponse(BaseModel):
     file_url: str
     file_id: int
 
-@router.post("/files", response_model=FileUploadResponse)
+@router.post("/files", response_model=FileUploadResponse, dependencies=[Depends(authenticate)])
 async def upload_files(files: UploadFile = File(...), db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -59,7 +60,7 @@ async def upload_files(files: UploadFile = File(...), db: AsyncSession = Depends
     return {"success": True, "message": "File uploaded", "file_name": files.filename, "file_url": file_path, "file_id": file_id}
 
 @router.patch("/files/{file_id}", dependencies=[Depends(authenticate)])
-async def rename_file(file_id: str, new_name: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
+async def rename_file(file_id: int, new_name: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
 
@@ -75,28 +76,48 @@ async def rename_file(file_id: str, new_name: str, db: AsyncSession = Depends(ge
     return {"success": True, "message": "File renamed"}
 
 @router.delete("/files/{file_id}", dependencies=[Depends(authenticate)])
-async def delete_file(file_id: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
+async def delete_file(file_id: int, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
 
+    # Получаем файл
     result = await db.execute(select(FileModel).filter(FileModel.file_id == file_id, FileModel.user_id == user_id))
     file = result.scalars().first()
     
     if not file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    
+    # Удаляем все записи о доступах к файлу
+    await db.execute(delete(FileAccess).where(FileAccess.file_id == file.id))
+    # await db.commit()
 
-    try:
-        os.remove(file.file_path)  # Синхронное удаление файла с диска
-    except FileNotFoundError:
+    # Удаление файла с диска
+    if os.path.exists(file.file_path):
+        try:
+            os.remove(file.file_path)
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on server")
 
+    # Удаляем файл из базы данных
     await db.delete(file)
     await db.commit()
 
     return {"success": True, "message": "File deleted"}
 
+# async def delete_file_from_disk(file_path):
+#     if os.path.exists(file_path):
+#         try:
+#             os.remove(file_path)
+#         except Exception as e:
+#             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+#     else:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on server")
+
+
 @router.get("/files/{file_id}", dependencies=[Depends(authenticate)])
-async def download_file(file_id: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
+async def download_file(file_id: int, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
 
     result = await db.execute(select(FileModel).filter(FileModel.file_id == file_id))
@@ -108,7 +129,7 @@ async def download_file(file_id: str, db: AsyncSession = Depends(get_session), A
     return FileResponse(file.file_path, media_type="application/octet-stream", filename=file.name)
 
 @router.post("/files/{file_id}/accesses", dependencies=[Depends(authenticate)])
-async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
+async def add_file_access(file_id: int, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
 
@@ -124,7 +145,7 @@ async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(g
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.file_id, FileAccess.user_id == user.id))
+    result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.id, FileAccess.user_id == user.id))
     file_access = result.scalars().first()
     
     if not file_access:
@@ -132,7 +153,7 @@ async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(g
         db.add(new_access)
         await db.commit()
 
-    accesses = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.file_id))
+    accesses = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.id))
     accesses = accesses.scalars().all()
 
     response = [{"fullname": f"{acc.user.first_name} {acc.user.last_name}", "email": acc.user.email, "type": acc.type} for acc in accesses]
@@ -140,7 +161,7 @@ async def add_file_access(file_id: str, email: str, db: AsyncSession = Depends(g
     return response
 
 @router.delete("/files/{file_id}/accesses", dependencies=[Depends(authenticate)])
-async def delete_file_access(file_id: str, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
+async def delete_file_access(file_id: int, email: str, db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
 
@@ -159,7 +180,7 @@ async def delete_file_access(file_id: str, email: str, db: AsyncSession = Depend
     if email == Authorize.get_jwt_subject():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot remove your own access")
 
-    result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.file_id, FileAccess.user_id == user.id))
+    result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.id, FileAccess.user_id == user.id))
     access = result.scalars().first()
 
     if not access:
@@ -170,7 +191,7 @@ async def delete_file_access(file_id: str, email: str, db: AsyncSession = Depend
 
     return {"success": True, "message": "Access removed"}
 
-@router.get("/files")
+@router.get("/files", dependencies=[Depends(authenticate)])
 async def get_files(db: AsyncSession = Depends(get_session), Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
     user_id = Authorize.get_jwt_subject()
@@ -181,7 +202,7 @@ async def get_files(db: AsyncSession = Depends(get_session), Authorize: AuthJWT 
     response = []
 
     for file in files_by_user:
-        result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.file_id))
+        result = await db.execute(select(FileAccess).filter(FileAccess.file_id == file.id))
         accesses_by_file = result.scalars().all()
         
         for access in accesses_by_file:
@@ -215,7 +236,7 @@ async def get_shared_files(db: AsyncSession = Depends(get_session), Authorize: A
 
     shared_files = []
     for access in file_accesses_by_user:
-        result = await db.execute(select(FileModel).filter(FileModel.file_id == access.file_id))
+        result = await db.execute(select(FileModel).filter(FileModel.id == access.file_id))
         file = result.scalars().first()
         if file:
             shared_files.append({
