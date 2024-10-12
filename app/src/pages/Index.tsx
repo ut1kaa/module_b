@@ -2,10 +2,31 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import PDF from "../assets/pdf.png";
 import axios from "axios";
+import FileModal from "../components/ModalWindow";
+
+export interface FileModel {
+    file_id: string;
+    name: string;
+    url: string;
+  }
 
 const Index = () => {
     const [files, setFiles] = useState<any[]>([]); // Список файлов
     const [selectedFile, setSelectedFile] = useState<File | null>(null); // Выбранный файл
+
+    const [selectedModalFile, setSelectedModalFile] = useState<FileModel | null>(null);
+    const [isModalOpen, setModalOpen] = useState<boolean>(false);
+
+    const handleFileClick = (file: FileModel) => {
+        setSelectedModalFile(file);
+        setModalOpen(true);
+    };
+
+    const closeModal = () => {
+        setModalOpen(false);
+        setSelectedModalFile(null);
+    };
+
 
     // Функция для загрузки файлов с сервера
     const fetchFiles = async () => {
@@ -104,10 +125,11 @@ const Index = () => {
                             <div
                                 className="col-lg-3 col-md-6 col-sm-6"
                                 key={file.file_id}
+                                onClick={() => handleFileClick(file)}
                             >
                                 <div className="card card-block card-stretch card-height">
                                     <div className="card-body image-thumb">
-                                        <a href={file.url}>
+                                        <div>
                                             <div className="mb-4 text-center p-3 rounded iq-thumb">
                                                 <div className="iq-image-overlay"></div>
                                                 <img
@@ -117,7 +139,7 @@ const Index = () => {
                                                 />
                                             </div>
                                             <h6>{file.name}</h6>
-                                        </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -125,6 +147,13 @@ const Index = () => {
                     </div>
                 </div>
             </div>
+            {isModalOpen && selectedModalFile && (
+                <FileModal 
+                    file={selectedModalFile} 
+                    onClose={closeModal} 
+                    refreshFiles={fetchFiles} 
+                />
+            )}
         </div>
     );
 };
