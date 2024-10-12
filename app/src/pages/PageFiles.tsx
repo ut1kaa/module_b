@@ -2,9 +2,29 @@ import { Link } from "react-router-dom";
 import "../styles/backend.css?v=1.0.0"
 import "../styles/line-awesome.min.css"
 import PDF from "../assets/pdf.png"
+import { useEffect, useState } from "react";
+import axios from "axios";
 
 
 const PageFiles = () => {
+    const [files, setFiles] = useState<any[]>([]); // Список файлов
+
+    const fetchFiles = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            const response = await axios.get("http://127.0.0.1:8000/shared", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setFiles(response.data); // Устанавливаем файлы
+        } catch (error) {
+            console.error("Error fetching files:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchFiles();
+    }, []);
+
 
     return (
 <div className="wrapper">
@@ -38,23 +58,28 @@ const PageFiles = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="col-lg-3 col-md-6 col-sm-6">
-                        <div className="card card-block card-stretch card-height">
-                            <div className="card-body image-thumb">
-                                <a href="#" data-title="Terms.pdf" data-load-file="file"
-                                    data-load-target="#resolte-contaniner"
-                                    data-url="../assets/vendor/doc-viewer/files/demo.pdf" data-toggle="modal"
-                                    data-target="#exampleModal">
-                                    <div className="mb-4 text-center p-3 rounded iq-thumb">
-                                        <div className="iq-image-overlay"></div>
-                                        <img src={PDF} className="img-fluid"
-                                            alt="image1"/>
+                    {files.map((file) => (
+                            <div
+                                className="col-lg-3 col-md-6 col-sm-6"
+                                key={file.file_id}
+                            >
+                                <div className="card card-block card-stretch card-height">
+                                    <div className="card-body image-thumb">
+                                        <a href={file.url}>
+                                            <div className="mb-4 text-center p-3 rounded iq-thumb">
+                                                <div className="iq-image-overlay"></div>
+                                                <img
+                                                    src={PDF}
+                                                    className="img-fluid"
+                                                    alt="image1"
+                                                />
+                                            </div>
+                                            <h6>{file.name}</h6>
+                                        </a>
                                     </div>
-                                    <h6>Файл</h6>
-                                </a>
+                                </div>
                             </div>
-                        </div>
-                    </div>
+                        ))}
                 </div>
             </div>
         </div>
