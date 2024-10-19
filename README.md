@@ -406,3 +406,207 @@ useEffect(() => {
 ```
 
 В этом примере `useEffect` вызывается один раз при монтировании компонента `Index`, так как массив зависимостей пустой (`[]`). В результате вызывается функция `fetchFiles()`, которая загружает файлы с сервера.
+
+## ОЧЕНЬ ПОДРОБНОЕ ОБЪЯСНЕНИЕ
+
+# Инструкция по созданию приложения на React с использованием `react-router-dom` и `fetch`
+
+## Структура проекта
+
+1. `src/`
+   - `App.tsx` — Главный компонент приложения.
+   - `pages/`
+     - `Index.js` — Компонент домашней страницы.
+     - `PageFiles.tsx` — Компонент страниув доступных файлов.
+     - `AuthSignIn.tsx` — Компонент авторизации.
+     - `AuthSignUp.tsx` — Компонент регистрации.
+   - `components/`
+     - `ModalWindow.tsx` — Компонент модального окна для действия над файлами.
+     - `PrivateRoute.tsx` — Компонент для защиты страниц от неавторизованных польователей.
+     - `TokenValidator.tsx` — Компонент для валидации токена авторизации.
+     - `styles/` — стандартные стили
+
+## 1. Настройка `react-router-dom`
+
+Для организации маршрутизации в React используем библиотеку `react-router-dom`. Это позволяет создавать навигацию между различными компонентами без перезагрузки страницы.
+
+###  `App.js`:
+
+```javascript
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import AuthSignIn from './pages/AuthSignIn';
+import AuthSignUp from './pages/AuthSignUp';
+import Index from './pages/Index';
+import PageFiles from './pages/PageFiles';
+import PrivateRoute from './components/PrivateRoute';
+import { isTokenValid } from './components/TokenValidator';
+
+function App() {
+  const token = localStorage.getItem('token');
+  const isTokenValidClientSide = isTokenValid(token);
+
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={!isTokenValidClientSide ? <AuthSignIn />: <Navigate to="/"/>} />
+        <Route path="/register" element={!isTokenValidClientSide ? <AuthSignUp />: <Navigate to="/"/>} />
+        <Route path="/" element={<PrivateRoute><Index /></PrivateRoute>} />
+        <Route path="/files" element={<PrivateRoute><PageFiles /></PrivateRoute>} />
+      </Routes>
+    </Router>
+  )
+}
+
+export default App
+
+```
+
+### Пояснение:
+
+- `BrowserRouter` оборачивает все приложение и позволяет использовать маршрутизацию.
+- `Routes` и `Route` задают различные пути (`path`) и компоненты, которые рендерятся при переходе по этим путям.
+- `Navigate` используется для переадресации.
+- Мы используем компонент isTokenValid, передавая в него токен авторизации из локального хранилища, чтобы переадесовать пользователя, если он невалиден на страицу авторизации, если валиден на главную страницу.
+
+## 2. Страницы `pages`
+
+Чтобы переделать html страницу в React Copmponent нужно:
+
+### 1. Создать компонент
+
+```javascript
+
+const Page = () => {
+
+  return (
+
+  )
+} 
+
+```
+
+### 2. Перенести html код в return (`ТУТ КОД`)
+
+```javascript
+
+const Page = () => {
+
+  return (
+    <div>
+      HTML CODE
+    </div>
+  )
+} 
+
+```
+
+### 3. Заменить `class` на `className`
+
+```javascript
+
+const Page = () => {
+
+  return (
+    <div className="code">
+      HTML CODE
+    </div>
+  )
+} 
+
+```
+
+### 4. Импортируем классы
+
+```javascript
+
+import "тут путь к файлу css"
+
+const Page = () => {
+
+  return (
+    <div className="code">
+      HTML CODE
+    </div>
+  )
+} 
+
+```
+
+
+## 3. Страница авторизации
+
+
+```javascript
+import React, { useState, useEffect } from 'react';
+
+
+const AuthSignIn = () => {
+    const [email, setEmail] = useState<string>('');
+    const [password, setPassword] = useState<string>('');
+
+const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  try {
+    const response = await fetch('http://127.0.0.1:8000/authorization', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem('token', data.token);
+      window.location.href = '/';
+    } else {
+      console.error('Login failed:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+  }
+};
+
+  return (
+    <div>
+      Код
+    </div>
+  );
+}
+
+export default AuthSignIn;
+```
+
+### Пояснение:
+
+- **`useState`**:
+  - `email` — хранит информацию о почте.
+  - `setEmail` — функция для изменения `email`, пример: `setEmail("Тут почта")`.
+- **`useEffect`**:
+  - Хук запускается при первом рендере компонента и выполняет запрос к API.
+  - Пустой массив `[]` в качестве второго аргумента указывает, что эффект должен выполняться только при первом рендере (аналогично `componentDidMount` в классовых компонентах).
+  - Используем `fetch` для выполнения запроса к API с заголовком `Authorization`, содержащим токен.
+
+
+```javascript
+
+<form  onSubmit={handleSubmit}>
+
+```
+
+
+Используем функцию handleSubmit при нажатии на кнопку с типом `submit`. Она делает POST запос к api передавая в теле JSON с данными о почте и пароле. Если сервер вернул код 200, значит авторизация прошла успешна и в теле ответа содержится токен авторизации, который мы сохраняем в локально хранилище для дальнейшего использования. 
+
+
+```javascript
+
+        <input className="floating-input form-control" value={email} type="email" placeholder=" " required  onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}/>
+
+
+```
+
+В value указываем значение из состояния `useState`, а в onChange подобную конструкцию чтобы изменять наше состояние. Это нужно чтобы  компонент имел доступ к тому, что вводит пользователь. Тем самым в состояние email будет хранится ввод пользователя.
+
+
+**Страница Регистрании сделана абсолютно по такому же  принципу, но добавлено несколько больше полей ввода**
+
+### 4. Страница файлов
+
