@@ -588,7 +588,7 @@ export default AuthSignIn;
 
 ```javascript
 
-<form  onSubmit={handleSubmit}>
+  <form  onSubmit={handleSubmit}>
 
 ```
 
@@ -598,8 +598,7 @@ export default AuthSignIn;
 
 ```javascript
 
-        <input className="floating-input form-control" value={email} type="email" placeholder=" " required  onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}/>
-
+  <input className="floating-input form-control" value={email} type="email" placeholder=" " required  onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}/>
 
 ```
 
@@ -610,3 +609,43 @@ export default AuthSignIn;
 
 ### 4. Страница файлов
 
+Тут мы используем несколько состояний:
+  1. Для хранения информации о файлах
+  2. Выбранный файл для загрузки
+  3. Выбранный файл для модльного окна
+  4. Открыто ли модальное окно
+   
+
+А так же функции:
+  1. Выбрать файл для модального окна и открыть модальное окно
+  2. Закрыть модальное окно и убрать файл из выбранного
+  3. Получить все мои файлы
+  4. Загрузить файл на  сервер
+  
+
+```javascript
+
+            {isModalOpen && selectedModalFile && (
+                <FileModal 
+                    file={selectedModalFile} 
+                    onClose={closeModal} 
+                    refreshFiles={fetchFiles} 
+                />
+            )}
+
+```
+
+Данный код добавляет в конце страницы элемент который при помощи стилей находится поверх всего, это и есть модальное окно. Оно срабатывает если состояние модального окна и выбранного файла не равно False.
+
+
+### 5. Модально окно
+
+Состояния используются для полей ввода как и ранее.
+
+Функции:
+  1. Переимменовать файла. Мы отправляем запрос на сервер и передаем состояние с новым названием.
+  2. Удалить файл. Тоже самое.
+  3. Добавить доступ и удалить доступ тоже самое.
+  4. Скачать файла. Мы получаем файл с сервера и скачиваем его для пользователя.
+
+Функцию для закрытия модального окна мы передаем из родительского элемента и используем в кнопке при помощи onClick.
